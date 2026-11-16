@@ -1,0 +1,66 @@
+rules_version = '2';
+
+// Server-side enforcement of the domain restriction and roles.
+// Even if someone bypasses the client checks, Firestore refuses every
+// read/write unless the caller's verified Google email ends in @hbplus.fit.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function allowedDomain() {
+      return signedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower().matches('.*@hbplus[.]fit$');
+    }
+
+    // Keep in sync with EXPO_PUBLIC_ADMIN_EMAILS
+    function bootstrapAdmins() {
+      return ['admin@hbplus.fit'];
+    }
+
+    function isAdmin() {
+      return allowedDomain()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    match /users/{uid} {
+      // Own profile, or any profile if admin
+      allow get: if allowedDomain() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+
+      // First login: create own profile; role can only be 'user',
+      // or 'admin' for a bootstrap admin email.
+      allow create: if allowedDomain()
+        && request.auth.uid == uid
+        && request.resource.data.email == request.auth.token.email
+        && (
+          request.resource.data.role == 'user'
+          || (request.resource.data.role == 'admin'
+              && request.auth.token.email in bootstrapAdmins())
+        );
+
+      // Users may refresh their own profile fields but never their role.
+      // Admins may change someone else's role.
+      allow update: if allowedDomain() && (
+        (request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['displayName', 'photoURL', 'lastLoginAt']))
+        ||
+        (isAdmin()
+          && request.auth.uid != uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])
+          && request.resource.data.role in ['admin', 'user'])
+      );
+
+      allow delete: if false;
+    }
+
+    // Deny everything else by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
