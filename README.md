@@ -6,7 +6,7 @@ allowed domain (default **`@hbplus.fit`**) get in. Everyone else sees:
 
 > Access restricted. Please login using your official domain email.
 
-**Live demo:** _add your Netlify URL here_
+**Live demo:** https://sairanjan78.github.io/hbplus-auth/ (GitHub Pages mirror of the web build; Netlify config included in `netlify.toml`)
 
 ---
 
